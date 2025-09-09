@@ -5,6 +5,8 @@ from PIL import Image
 from pathlib import Path
 import re
 from io import BytesIO
+import requests
+from urllib.parse import urlparse
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -71,6 +73,14 @@ def apply_custom_css():
     .floating {
         animation: float 3s ease-in-out infinite;
     }
+    
+    .github-info {
+        background: rgba(40, 167, 69, 0.1);
+        border: 1px solid rgba(40, 167, 69, 0.3);
+        border-radius: 10px;
+        padding: 1rem;
+        margin: 1rem 0;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -79,6 +89,8 @@ class FixedEnhancedSystem:
         self.df = None
         self.image_index = {}
         self.columns_map = {}
+        # קובץ ברירת המחדל מ-GitHub
+        self.default_github_url = "https://raw.githubusercontent.com/print-imall/ad-agency-chat/main/campaigns_data.xlsx"
     
     def clear_cache(self):
         try:
@@ -101,13 +113,88 @@ class FixedEnhancedSystem:
         except Exception as e:
             return f"❌ שגיאה בניקוי Cache: {e}"
 
+    def convert_github_url_to_raw(self, github_url):
+        """המרת URL של GitHub לכתובת הקובץ הגולמי"""
+        if "raw.githubusercontent.com" in github_url:
+            return github_url
+        
+        if "github.com" in github_url and "/blob/" in github_url:
+            return github_url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
+        
+        return github_url
+
+    def load_data_from_github(self, github_url=None):
+        """טעינת קובץ Excel מ-GitHub"""
+        if github_url is None:
+            github_url = self.default_github_url
+        
+        try:
+            # המרת ה-URL לפורמט הגולמי
+            raw_url = self.convert_github_url_to_raw(github_url)
+            
+            # הורדת הקובץ
+            response = requests.get(raw_url, timeout=30)
+            response.raise_for_status()
+            
+            # יצירת BytesIO object מהתוכן
+            excel_buffer = BytesIO(response.content)
+            
+            # טעינת הקובץ
+            self.df = pd.read_excel(excel_buffer, engine='openpyxl')
+            self.df = self.clean_data()
+            
+            # הדפסת דיבוג לבדיקת מבנה הקובץ
+            st.write("📋 **מבנה הקובץ שנטען מ-GitHub:**")
+            st.write(f"📊 מספר שורות: {len(self.df)}")
+            st.write(f"📋 מספר עמודות: {len(self.df.columns)}")
+            
+            st.write("📝 **רשימת כל העמודות:**")
+            for i, col in enumerate(self.df.columns):
+                st.write(f"  {i+1}. '{col}' (סוג: {self.df[col].dtype})")
+            
+            # יצירת המיפוי אחרי הדיבוג
+            self.create_column_mapping()
+            
+            # הצגת דוגמה מהנתונים - רק עמודות חשובות
+            st.write("👀 **דוגמה מהנתונים:**")
+            if len(self.df.columns) >= 10:
+                # הצגת עמודות ספציפיות שחשובות לנו
+                display_cols = [self.df.columns[0], self.df.columns[2], self.df.columns[9]]  # מתחם, פלטפורמה, קמפיין
+                sample_df = self.df[display_cols].head(5)
+                st.dataframe(sample_df)
+                
+                # בדיקה ספציפית של עמודת הקמפיין
+                campaign_col = self.df.columns[9]  # עמודה 10 = אינדקס 9
+                st.write(f"🎯 **בדיקת עמודת הקמפיין '{campaign_col}':**")
+                unique_campaigns = self.df[campaign_col].dropna().unique()
+                st.write(f"ערכים ייחודיים: {list(unique_campaigns)}")
+                
+                # ספירה של כל ערך
+                campaign_counts = self.df[campaign_col].value_counts()
+                st.write("📊 **ספירת ערכים בעמודת קמפיין:**")
+                for value, count in campaign_counts.items():
+                    st.write(f"  - '{value}': {count} פריטים")
+            else:
+                st.dataframe(self.df.head(3))
+            
+            st.success(f"✅ נטען קובץ מ-GitHub עם {len(self.df)} פריטים")
+            return True
+            
+        except requests.RequestException as e:
+            st.error(f"❌ שגיאה בהורדת הקובץ מ-GitHub: {e}")
+            return False
+        except Exception as e:
+            st.error(f"❌ שגיאה בטעינת הקובץ: {e}")
+            return False
+
     def load_excel_data(self, uploaded_file):
+        """טעינת קובץ Excel מהעלאה מקומית"""
         try:
             self.df = pd.read_excel(uploaded_file, engine='openpyxl')
             self.df = self.clean_data()
             
             # הדפסת דיבוג לבדיקת מבנה הקובץ
-            st.write("🔍 **מבנה הקובץ שנטען:**")
+            st.write("📋 **מבנה הקובץ שנטען:**")
             st.write(f"📊 מספר שורות: {len(self.df)}")
             st.write(f"📋 מספר עמודות: {len(self.df.columns)}")
             
@@ -210,7 +297,7 @@ class FixedEnhancedSystem:
                     
                     if part_lower in field_value:
                         hebrew_name = self.get_hebrew_name(field_name)
-                        matching_details.append(f"'{part}' נמצא ב{hebrew_name}")
+                        matching_details.append(f"'{part}' נמצא ב'{hebrew_name}")
                         found = True
                         score += 50
                         break
@@ -275,11 +362,11 @@ class FixedEnhancedSystem:
             return "❌ לא נטענו נתונים עדיין"
         
         if campaign_type.lower() == "דיגיטלי":
-            keywords = ['פייסבוק', 'אינסטגרם', 'גוגל', 'דיגיטל', 'פריימלס', 'ווייז']
+            keywords = ['פייסבוק', 'אינסטגרם', 'גוגל', 'דיגיטל', 'פריימלס', 'וויז']
         elif campaign_type.lower() == "פרינט":
             keywords = ['בילבורד', 'חוצות', 'עיתון', 'מודעה', 'פוסטר', 'שלט']
         elif campaign_type.lower() == "משולב":
-            digital_keywords = ['פייסבוק', 'אינסטגרם', 'גוגל', 'דיגיטל', 'פריימלס', 'ווייז']
+            digital_keywords = ['פייסבוק', 'אינסטגרם', 'גוגל', 'דיגיטל', 'פריימלס', 'וויז']
             print_keywords = ['בילבורד', 'חוצות', 'עיתון', 'מודעה', 'פוסטר', 'שלט']
             keywords = digital_keywords + print_keywords
         else:
@@ -338,7 +425,7 @@ class FixedEnhancedSystem:
     def format_gantt_result(self, items, total_cost, budget, gantt_type):
         num_items = len(items)
         
-        result_text = f"📊 **גאנט פרסום - {gantt_type}**\n\n"
+        result_text = f"📊 **גנט פרסום - {gantt_type}**\n\n"
         
         if budget:
             result_text += f"💰 **תקציב:** {budget:,.0f} ש״ח\n"
@@ -405,7 +492,7 @@ class FixedEnhancedSystem:
         buffer = BytesIO()
         
         try:
-            # ניסיון לייבא ספריות לעברית
+            # ניסיון ליבא ספריות לעברית
             from reportlab.pdfbase import pdfmetrics
             from reportlab.pdfbase.ttfonts import TTFont
             
@@ -731,7 +818,7 @@ def main():
     <div style="text-align: center; margin-bottom: 2rem;">
         <h1 class="floating">🚀 מערכת פרסום מתקדמת</h1>
         <p style="font-size: 1.2rem; color: #667eea; font-weight: 500;">
-            מערכת חכמה לחיפוש, בניית גאנט וניהול קמפיינים פרסומיים
+            מערכת חכמה לחיפוש, בניית גנט ונידול קמפיינים פרסומיים
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -742,7 +829,35 @@ def main():
     search_system = st.session_state.enhanced_search
     
     with st.sidebar:
-        st.markdown("### 📂 העלאת נתונים")
+        st.markdown("### 📂 טעינת נתונים")
+        
+        # אפשרות לטעינת קובץ מ-GitHub
+        st.markdown('<div class="github-info">', unsafe_allow_html=True)
+        st.markdown("**🌐 טעינה מ-GitHub (מומלץ)**")
+        st.markdown("הקובץ יטען אוטומטיש מהמאגר")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🚀 טען נתונים מ-GitHub", use_container_width=True):
+                with st.spinner("מוריד קובץ מ-GitHub..."):
+                    if search_system.load_data_from_github():
+                        st.balloons()
+        
+        with col2:
+            # אפשרות לטעינת URL מותאם אישית
+            custom_url = st.text_input("🔗 או הכנס URL מותאם", 
+                                     placeholder="https://raw.githubusercontent.com/...")
+            if custom_url and st.button("🔗 טען מ-URL", use_container_width=True):
+                with st.spinner("מוריד קובץ..."):
+                    if search_system.load_data_from_github(custom_url):
+                        st.balloons()
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # אפשרות טעינה מקומית
+        st.markdown("**📁 טעינה מקומית**")
         uploaded_file = st.file_uploader("בחר קובץ Excel", type=['xlsx', 'xls'])
         
         if uploaded_file:
@@ -789,11 +904,11 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
     
-    tab1, tab2, tab3 = st.tabs(["🔍 חיפוש חכם", "📊 בניית גאנט", "📄 ייצוא מתקדם"])
+    tab1, tab2, tab3 = st.tabs(["🔍 חיפוש חכם", "📊 בניית גנט", "📄 ייצוא מתקדם"])
     
     with tab1:
         if search_system.df is None:
-            st.info("העלה קובץ Excel כדי להתחיל")
+            st.info("טען נתונים מ-GitHub או העלה קובץ Excel כדי להתחיל")
         else:
             if 'history' not in st.session_state:
                 st.session_state.history = []
@@ -832,16 +947,16 @@ def main():
                     
                     st.rerun()
                 else:
-                    st.error("❌ אנא העלה קובץ נתונים תחילה")
+                    st.error("❌ אנא טען קובץ נתונים תחילה")
                     st.session_state.history.pop()
     
     with tab2:
         if search_system.df is None:
-            st.warning("העלה קובץ נתונים כדי לבנות גאנט")
+            st.warning("טען נתונים כדי לבנות גנט")
         else:
-            gantt_type = st.selectbox("בחר סוג גאנט:", ["גאנט לפי תקציב", "גאנט לפי סוג קמפיין"])
+            gantt_type = st.selectbox("בחר סוג גנט:", ["גנט לפי תקציב", "גנט לפי סוג קמפיין"])
             
-            if gantt_type == "גאנט לפי תקציב":
+            if gantt_type == "גנט לפי תקציב":
                 col1, col2 = st.columns([2, 3])
                 
                 with col1:
@@ -853,20 +968,20 @@ def main():
                         all_locations = search_system.df[location_col].unique()
                         selected_locations = st.multiselect("🗺️ בחר מתחמים (אופציונלי)", all_locations)
                 
-                if st.button("🚀 בנה גאנט לפי תקציב", use_container_width=True):
-                    with st.spinner("בונה גאנט..."):
+                if st.button("🚀 בנה גנט לפי תקציב", use_container_width=True):
+                    with st.spinner("בונה גנט..."):
                         result = search_system.build_gantt_by_budget(budget, selected_locations if selected_locations else None)
                         
                         if isinstance(result, tuple):
                             text, table, images = result
-                            st.success("✅ גאנט נבנה בהצלחה!")
+                            st.success("✅ גנט נבנה בהצלחה!")
                             st.markdown(text)
                             
                             df_display = pd.DataFrame(table)
                             st.dataframe(df_display, use_container_width=True)
                             
                             st.session_state['last_gantt'] = {
-                                'title': f'גאנט פרסום - תקציב {budget:,.0f} ש״ח',
+                                'title': f'גנט פרסום - תקציב {budget:,.0f} ש״ח',
                                 'table': table,
                                 'type': 'budget'
                             }
@@ -881,7 +996,7 @@ def main():
                         else:
                             st.error(result)
             
-            elif gantt_type == "גאנט לפי סוג קמפיין":
+            elif gantt_type == "גנט לפי סוג קמפיין":
                 col1, col2 = st.columns([1, 1])
                 
                 with col1:
@@ -902,8 +1017,8 @@ def main():
                     else:
                         selected_locations_type = None
                 
-                if st.button("🚀 בנה גאנט לפי סוג", use_container_width=True):
-                    with st.spinner("בונה גאנט..."):
+                if st.button("🚀 בנה גנט לפי סוג", use_container_width=True):
+                    with st.spinner("בונה גנט..."):
                         result = search_system.build_gantt_by_campaign_type(
                             campaign_type,
                             budget_limit if use_budget else None,
@@ -912,7 +1027,7 @@ def main():
                         
                         if isinstance(result, tuple):
                             text, table, images = result
-                            st.success("✅ גאנט נבנה בהצלחה!")
+                            st.success("✅ גנט נבנה בהצלחה!")
                             st.markdown(text)
                             
                             df_display = pd.DataFrame(table)
@@ -921,7 +1036,7 @@ def main():
                             budget_text = f" - תקציב {budget_limit:,.0f} ש״ח" if use_budget and budget_limit else ""
                             locations_text = f" - {len(selected_locations_type)} מתחמים" if selected_locations_type else ""
                             st.session_state['last_gantt'] = {
-                                'title': f'גאנט פרסום - {campaign_type}{budget_text}{locations_text}',
+                                'title': f'גנט פרסום - {campaign_type}{budget_text}{locations_text}',
                                 'table': table,
                                 'type': f'campaign_type_{campaign_type}'
                             }
@@ -940,7 +1055,7 @@ def main():
         if 'last_gantt' in st.session_state:
             gantt_data = st.session_state['last_gantt']
             
-            st.info(f"📋 נתונים זמינים לייצוא: {gantt_data['title']}")
+            st.info(f"📋 נתונים זמינים ליצוא: {gantt_data['title']}")
             
             col1, col2 = st.columns(2)
             
@@ -1036,7 +1151,7 @@ def main():
                 st.dataframe(preview_no_price, use_container_width=True)
         
         else:
-            st.info("📋 צור גאנט כדי לייצא נתונים")
+            st.info("📋 צור גנט כדי לייצא נתונים")
 
 if __name__ == "__main__":
     main()
