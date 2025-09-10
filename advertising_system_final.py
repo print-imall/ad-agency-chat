@@ -92,22 +92,25 @@ class AutomatedAdvertisingSystem:
         self.image_index = {}
         self.columns_map = {}
         self.excel_url = "https://github.com/print-imall/ad-agency-chat/raw/main/campaigns_data.xlsx"
-        self.dropbox_base_url = None  # נוסיף את זה אחר כך
+        
+        # תמונות ידועות
+        self.known_images = {
+            "11090111": "https://www.dropbox.com/scl/fi/lnklorrhl6gtovetf5m92/11090111.jpg?rlkey=o4wcjsdtzd4rqzep1i21lvfkk&st=whqr2eod&dl=1"
+        }
+        
+        # אתחול התמונות
+        self.image_index.update(self.known_images)
         
     def auto_load_data(self):
         """טעינה אוטומטית של נתוני האקסל מ-GitHub"""
         try:
             with st.spinner("🔄 טוען נתונים מהמערכת..."):
-                # הורדת קובץ האקסל מ-GitHub
                 response = requests.get(self.excel_url, timeout=30)
                 response.raise_for_status()
                 
-                # טעינת הנתונים לזיכרון
                 excel_buffer = BytesIO(response.content)
                 self.df = pd.read_excel(excel_buffer, engine='openpyxl')
                 self.df = self.clean_data()
-                
-                # יצירת מיפוי עמודות
                 self.create_column_mapping()
                 
                 st.success("✅ נתונים נטענו בהצלחה מהמערכת!")
@@ -119,29 +122,6 @@ class AutomatedAdvertisingSystem:
         except Exception as e:
             st.error(f"❌ שגיאה בטעינת הנתונים: {e}")
             return False
-    
-    def setup_dropbox_images(self, dropbox_folder_url=None):
-        """הגדרת תמונות מדרופבוקס"""
-        if dropbox_folder_url:
-            # נוכל להוסיף כאן לוגיקה להורדת רשימת תמונות מדרופבוקס
-            # לעת עתה נשאיר זאת כהכנה לעתיד
-            self.dropbox_base_url = dropbox_folder_url
-            st.info("🔗 קישור לדרופבוקס נשמר. תמונות יטענו בעת הצורך.")
-            return True
-        return False
-    
-    def download_image_from_dropbox(self, item_code):
-        """הורדת תמונה ספציפית מדרופבוקס לפי קוד פריט"""
-        if not self.dropbox_base_url:
-            return None
-            
-        try:
-            # נסיון למצוא תמונה עם קוד הפריט
-            # זה דורש את הקישור הישיר לתמונות
-            # נוכל להרחיב את זה בהתאם לקישורים הספציפיים
-            pass
-        except:
-            return None
     
     def clear_cache(self):
         try:
@@ -189,7 +169,6 @@ class AutomatedAdvertisingSystem:
                 'width2': columns[8]
             }
             
-            # הוספת עמודת קמפיין אם יש
             if len(columns) >= 10:
                 self.columns_map['campaign'] = columns[9]
 
@@ -199,14 +178,26 @@ class AutomatedAdvertisingSystem:
             return
         
         image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
-        self.image_index = {}
+        local_images = {}
         
         for file_path in Path(image_folder).glob('*'):
             if file_path.suffix.lower() in image_extensions:
                 item_code = file_path.stem
-                self.image_index[item_code] = str(file_path)
+                local_images[item_code] = str(file_path)
         
-        st.success(f"נמצאו {len(self.image_index)} תמונות")
+        self.image_index.update(local_images)
+        st.success(f"נמצאו {len(local_images)} תמונות מקומיות")
+
+    def add_dropbox_image(self, item_code, dropbox_url):
+        """הוספת תמונה מדרופבוקס"""
+        # המרה לקישור ישיר
+        if "dl=0" in dropbox_url:
+            direct_url = dropbox_url.replace("dl=0", "dl=1")
+        else:
+            direct_url = dropbox_url
+        
+        self.image_index[str(item_code).strip()] = direct_url
+        return True
 
     def smart_search(self, query):
         if self.df is None:
@@ -425,132 +416,6 @@ class AutomatedAdvertisingSystem:
 
     def create_pdf_export(self, table_data, title, include_price=True):
         buffer = BytesIO()
-        
-        try:
-            # ניסיון לייבא ספריות לעברית
-            from reportlab.pdfbase import pdfmetrics
-            from reportlab.pdfbase.ttfonts import TTFont
-            
-            # ניסיון לטעון פונט עברי מהמערכת
-            hebrew_font_loaded = False
-            
-            # רשימת פונטים עבריים אפשריים במערכת
-            hebrew_fonts = [
-                'C:/Windows/Fonts/arial.ttf',
-                'C:/Windows/Fonts/calibri.ttf', 
-                'C:/Windows/Fonts/tahoma.ttf',
-                '/System/Library/Fonts/Arial.ttf',  # Mac
-                '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'  # Linux
-            ]
-            
-            for font_path in hebrew_fonts:
-                try:
-                    if os.path.exists(font_path):
-                        pdfmetrics.registerFont(TTFont('HebrewFont', font_path))
-                        hebrew_font_loaded = True
-                        break
-                except:
-                    continue
-            
-            if not hebrew_font_loaded:
-                st.warning("⚠️ לא נמצא פונט עברי במערכת. ה-PDF יוצג באנגלית.")
-                return self.create_simple_pdf_export(table_data, title, include_price)
-            
-        except ImportError:
-            st.warning("⚠️ חסרות ספריות לפונט עברי. ה-PDF יוצג באנגלית.")
-            return self.create_simple_pdf_export(table_data, title, include_price)
-        
-        # יצירת PDF עם פונט עברי
-        doc = SimpleDocTemplate(buffer, pagesize=A4)
-        story = []
-        
-        styles = getSampleStyleSheet()
-        
-        # סגנון עברי מותאם
-        hebrew_style = ParagraphStyle(
-            'Hebrew',
-            parent=styles['Normal'],
-            fontName='HebrewFont',
-            fontSize=12,
-            alignment=2,  # יישור לימין
-            wordWrap='RTL'
-        )
-        
-        title_style = ParagraphStyle(
-            'HebrewTitle',
-            parent=styles['Heading1'],
-            fontName='HebrewFont',
-            fontSize=16,
-            spaceAfter=30,
-            alignment=1  # מרכז
-        )
-        
-        # כותרת בעברית
-        story.append(Paragraph(title, title_style))
-        story.append(Spacer(1, 20))
-        
-        if not table_data:
-            story.append(Paragraph("אין נתונים להצגה", hebrew_style))
-        else:
-            df = pd.DataFrame(table_data)
-            
-            if not include_price:
-                columns_to_remove = ['מק"ט', 'מחיר מכירה']
-                for col in columns_to_remove:
-                    if col in df.columns:
-                        df = df.drop(columns=[col])
-            
-            # יצירת טבלה עם נתונים עבריים
-            table_values = []
-            
-            # כותרות
-            headers = list(df.columns)
-            table_values.append(headers)
-            
-            # תוכן
-            for _, row in df.iterrows():
-                row_data = [str(cell) for cell in row]
-                table_values.append(row_data)
-            
-            table = Table(table_values, repeatRows=1)
-            
-            table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'HebrewFont'),
-                ('FONTSIZE', (0, 0), (-1, 0), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('TOPPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.lightgrey),
-                ('FONTNAME', (0, 1), (-1, -1), 'HebrewFont'),
-                ('FONTSIZE', (0, 1), (-1, -1), 9),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('LEFTPADDING', (0, 0), (-1, -1), 6),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.lightgrey, colors.white])
-            ]))
-            
-            story.append(table)
-        
-        # תאריך בעברית
-        from datetime import datetime
-        story.append(Spacer(1, 30))
-        timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
-        story.append(Paragraph(f"נוצר בתאריך: {timestamp}", hebrew_style))
-        
-        try:
-            doc.build(story)
-            buffer.seek(0)
-            return buffer
-        except Exception as e:
-            st.error(f"שגיאה ביצירת PDF עברי: {e}")
-            return self.create_simple_pdf_export(table_data, title, include_price)
-
-    def create_simple_pdf_export(self, table_data, title, include_price=True):
-        """גיבוי - PDF פשוט באנגלית"""
-        buffer = BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4)
         story = []
         
@@ -565,7 +430,6 @@ class AutomatedAdvertisingSystem:
             fontName='Helvetica-Bold'
         )
         
-        # כותרת באנגלית
         english_title = f"Advertising Campaign Report - {len(table_data) if table_data else 0} Items"
         story.append(Paragraph(english_title, title_style))
         story.append(Spacer(1, 20))
@@ -581,7 +445,6 @@ class AutomatedAdvertisingSystem:
                     if col in df.columns:
                         df = df.drop(columns=[col])
             
-            # המרת כותרות לאנגלית
             column_translation = {
                 'מס\'': 'No.',
                 'מק"ט': 'Item Code',
@@ -731,11 +594,21 @@ class AutomatedAdvertisingSystem:
         except:
             return str(dim_str)
 
-    def display_image(self, image_path, caption=None):
+    def display_image(self, image_path_or_url, caption=None):
         try:
-            image = Image.open(image_path)
-            st.image(image, use_container_width=True, caption=caption)
-            return True
+            if isinstance(image_path_or_url, str) and image_path_or_url.startswith('http'):
+                response = requests.get(image_path_or_url, timeout=10)
+                if response.status_code == 200:
+                    image = Image.open(BytesIO(response.content))
+                    st.image(image, use_container_width=True, caption=caption)
+                    return True
+                else:
+                    st.warning(f"לא ניתן לטעון תמונה מ: {image_path_or_url}")
+                    return False
+            else:
+                image = Image.open(image_path_or_url)
+                st.image(image, use_container_width=True, caption=caption)
+                return True
         except Exception as e:
             st.warning(f"לא ניתן להציג תמונה: {e}")
             return False
@@ -762,13 +635,11 @@ def main():
     </div>
     """, unsafe_allow_html=True)
     
-    # אתחול המערכת
     if 'auto_system' not in st.session_state:
         st.session_state.auto_system = AutomatedAdvertisingSystem()
     
     system = st.session_state.auto_system
     
-    # טעינה אוטומטית של נתונים בפעם הראשונה
     if system.df is None:
         with st.spinner("🔄 מאתחל מערכת ונטען נתונים..."):
             if system.auto_load_data():
@@ -785,315 +656,4 @@ def main():
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🔄 רענן נתונים", use_container_width=True):
-                with st.spinner("מרענן נתונים..."):
-                    if system.auto_load_data():
-                        st.success("נתונים עודכנו!")
-                        st.rerun()
-        
-        with col2:
-            if st.button("🗑️ נקה Cache", use_container_width=True):
-                result = system.clear_cache()
-                st.success(result)
-                st.rerun()
-        
-        st.markdown("---")
-        
-        st.markdown("### 🖼️ תמונות אוטומטיות")
-        st.info("💡 התמונות נטענות אוטומטית מדרופבוקס")
-        
-        if st.button("☁️ טען תמונות מדרופבוקס", use_container_width=True):
-            with st.spinner("טוען תמונות מדרופבוקס..."):
-                num_images = system.auto_load_images_from_dropbox()
-                if num_images > 0:
-                    st.success(f"נטענו {num_images} תמונות מדרופבוקס!")
-                else:
-                    st.warning("לא נמצאו תמונות או בעיה בחיבור")
-        
-        st.markdown("### 📁 תמונות מקומיות נוספות")
-        st.info("💡 ניתן להוסיף תמונות מקומיות בנוסף לאוטומטיות")
-        
-        image_folder = st.text_input("נתיב לתיקיית תמונות מקומית")
-        
-        if image_folder and st.button("📁 טען תמונות מקומיות", use_container_width=True):
-            system.index_images(image_folder)
-        
-        st.markdown("---")
-        
-        st.markdown("### 🔗 מידע דרופבוקס")
-        if system.dropbox_folder_url:
-            st.success("✅ מחובר לדרופבוקס")
-            st.info("🔗 תמונות יטענו אוטומטית בעת הצורך")
-        
-        if system.df is not None:
-            st.markdown("---")
-            st.markdown("### 📊 סטטיסטיקות")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown(f"""
-                <div class="metric-container">
-                    <h3 style="color: #667eea; margin: 0;">📋</h3>
-                    <h2 style="margin: 0.5rem 0;">{len(system.df):,}</h2>
-                    <p style="margin: 0; color: #666;">פריטים</p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col2:
-                st.markdown(f"""
-                <div class="metric-container">
-                    <h3 style="color: #764ba2; margin: 0;">🖼️</h3>
-                    <h2 style="margin: 0.5rem 0;">{len(system.image_index):,}</h2>
-                    <p style="margin: 0; color: #666;">תמונות</p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            st.markdown("---")
-            st.markdown("### 🎯 מידע על הנתונים")
-            st.info(f"📅 נתונים עודכנו לאחרונה: {pd.Timestamp.now().strftime('%d/%m/%Y %H:%M')}")
-            st.info(f"🌐 מקור: GitHub Repository")
-    
-    tab1, tab2, tab3 = st.tabs(["🔍 חיפוש חכם", "📊 בניית גנט", "📄 ייצוא מתקדם"])
-    
-    with tab1:
-        if system.df is None:
-            st.error("❌ שגיאה בטעינת הנתונים. נסה לרענן את הדף.")
-        else:
-            if 'history' not in st.session_state:
-                st.session_state.history = []
-            
-            for message in st.session_state.history:
-                if message['role'] == 'user':
-                    with st.chat_message("user"):
-                        st.write(message['content'])
-                else:
-                    with st.chat_message("assistant"):
-                        st.markdown(message['content'])
-                        
-                        if 'table' in message:
-                            st.dataframe(pd.DataFrame(message['table']), use_container_width=True)
-                        
-                        if 'image' in message:
-                            system.display_image(message['image'])
-            
-            user_input = st.chat_input("🔍 שאל שאלה או חפש משהו...")
-            
-            if user_input:
-                st.session_state.history.append({'role': 'user', 'content': user_input})
-                
-                with st.spinner("🔍 מחפש..."):
-                    result = system.smart_search(user_input)
-                    
-                    if isinstance(result, tuple):
-                        text, table, image = result
-                        msg = {'role': 'assistant', 'content': text, 'table': table}
-                        if image:
-                            msg['image'] = image
-                        st.session_state.history.append(msg)
-                    else:
-                        st.session_state.history.append({'role': 'assistant', 'content': result})
-                
-                st.rerun()
-    
-    with tab2:
-        if system.df is None:
-            st.warning("❌ שגיאה בטעינת הנתונים")
-        else:
-            gantt_type = st.selectbox("בחר סוג גנט:", ["גנט לפי תקציב", "גנט לפי סוג קמפיין"])
-            
-            if gantt_type == "גנט לפי תקציב":
-                col1, col2 = st.columns([2, 3])
-                
-                with col1:
-                    budget = st.number_input("💰 תקציב (ש״ח)", min_value=0, value=50000, step=1000)
-                
-                with col2:
-                    if 'location' in system.columns_map:
-                        location_col = system.columns_map['location']
-                        all_locations = system.df[location_col].unique()
-                        selected_locations = st.multiselect("🗺️ בחר מתחמים (אופציונלי)", all_locations)
-                
-                if st.button("🚀 בנה גנט לפי תקציב", use_container_width=True):
-                    with st.spinner("בונה גנט..."):
-                        result = system.build_gantt_by_budget(budget, selected_locations if selected_locations else None)
-                        
-                        if isinstance(result, tuple):
-                            text, table, images = result
-                            st.success("✅ גנט נבנה בהצלחה!")
-                            st.markdown(text)
-                            
-                            df_display = pd.DataFrame(table)
-                            st.dataframe(df_display, use_container_width=True)
-                            
-                            st.session_state['last_gantt'] = {
-                                'title': f'גנט פרסום - תקציב {budget:,.0f} ש״ח',
-                                'table': table,
-                                'type': 'budget'
-                            }
-                            
-                            if images:
-                                st.markdown("### 🖼️ תמונות האלמנטים")
-                                cols = st.columns(min(3, len(images)))
-                                for i, (item_code, image_path) in enumerate(images):
-                                    with cols[i % 3]:
-                                        system.display_image(image_path, f"מק״ט: {item_code}")
-                        else:
-                            st.error(result)
-            
-            elif gantt_type == "גנט לפי סוג קמפיין":
-                col1, col2 = st.columns([1, 1])
-                
-                with col1:
-                    campaign_type = st.selectbox("🎯 בחר סוג קמפיין:", ["דיגיטלי", "פרינט", "משולב"])
-                    
-                    use_budget = st.checkbox("💰 הגבל לפי תקציב")
-                    
-                    if use_budget:
-                        budget_limit = st.number_input("תקציב מקסימלי (ש״ח)", min_value=0, value=30000, step=1000)
-                    else:
-                        budget_limit = None
-                
-                with col2:
-                    if 'location' in system.columns_map:
-                        location_col = system.columns_map['location']
-                        all_locations = system.df[location_col].unique()
-                        selected_locations_type = st.multiselect("🗺️ בחר מתחמים (אופציונלי)", all_locations, key="locations_by_type")
-                    else:
-                        selected_locations_type = None
-                
-                if st.button("🚀 בנה גנט לפי סוג", use_container_width=True):
-                    with st.spinner("בונה גנט..."):
-                        result = system.build_gantt_by_campaign_type(
-                            campaign_type,
-                            budget_limit if use_budget else None,
-                            selected_locations_type if selected_locations_type else None
-                        )
-                        
-                        if isinstance(result, tuple):
-                            text, table, images = result
-                            st.success("✅ גנט נבנה בהצלחה!")
-                            st.markdown(text)
-                            
-                            df_display = pd.DataFrame(table)
-                            st.dataframe(df_display, use_container_width=True)
-                            
-                            budget_text = f" - תקציב {budget_limit:,.0f} ש״ח" if use_budget and budget_limit else ""
-                            locations_text = f" - {len(selected_locations_type)} מתחמים" if selected_locations_type else ""
-                            st.session_state['last_gantt'] = {
-                                'title': f'גנט פרסום - {campaign_type}{budget_text}{locations_text}',
-                                'table': table,
-                                'type': f'campaign_type_{campaign_type}'
-                            }
-                            
-                            if images:
-                                st.markdown("### 🖼️ תמונות האלמנטים")
-                                cols = st.columns(min(3, len(images)))
-                                for i, (item_code, image_path) in enumerate(images):
-                                    with cols[i % 3]:
-                                        system.display_image(image_path, f"מק״ט: {item_code}")
-                        else:
-                            st.error(result)
-    
-    with tab3:
-        if 'last_gantt' in st.session_state:
-            gantt_data = st.session_state['last_gantt']
-            
-            st.info(f"📋 נתונים זמינים לייצוא: {gantt_data['title']}")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("📊 גרסה מלאה")
-                
-                if st.button("📊 הורד Excel מלא", key="excel_full"):
-                    with st.spinner("יוצר קובץ Excel..."):
-                        try:
-                            export_buffer = system.create_excel_export(
-                                gantt_data['table'], gantt_data['title'], include_price=True
-                            )
-                            
-                            st.download_button(
-                                label="💾 שמור Excel מלא",
-                                data=export_buffer.getvalue(),
-                                file_name=f"gantt_full_{gantt_data['type']}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            )
-                            st.success("✅ קובץ Excel מלא מוכן!")
-                        except Exception as e:
-                            st.error(f"❌ שגיאה: {e}")
-                
-                if st.button("📄 הורד PDF מלא", key="pdf_full"):
-                    with st.spinner("יוצר PDF..."):
-                        try:
-                            pdf_buffer = system.create_pdf_export(
-                                gantt_data['table'], gantt_data['title'], include_price=True
-                            )
-                            
-                            st.download_button(
-                                label="💾 שמור PDF מלא",
-                                data=pdf_buffer.getvalue(),
-                                file_name=f"gantt_full_{gantt_data['type']}.pdf",
-                                mime="application/pdf"
-                            )
-                            st.success("✅ קובץ PDF מלא מוכן!")
-                        except Exception as e:
-                            st.error(f"❌ שגיאה: {e}")
-            
-            with col2:
-                st.subheader("👥 גרסת לקוח")
-                
-                if st.button("📊 הורד Excel מקוצר", key="excel_short"):
-                    with st.spinner("יוצר קובץ Excel..."):
-                        try:
-                            export_buffer = system.create_excel_export(
-                                gantt_data['table'], gantt_data['title'], include_price=False
-                            )
-                            
-                            st.download_button(
-                                label="💾 שמור Excel מקוצר",
-                                data=export_buffer.getvalue(),
-                                file_name=f"gantt_client_{gantt_data['type']}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            )
-                            st.success("✅ קובץ Excel מקוצר מוכן!")
-                        except Exception as e:
-                            st.error(f"❌ שגיאה: {e}")
-                
-                if st.button("📄 הורד PDF מקוצר", key="pdf_short"):
-                    with st.spinner("יוצר PDF..."):
-                        try:
-                            pdf_buffer = system.create_pdf_export(
-                                gantt_data['table'], gantt_data['title'], include_price=False
-                            )
-                            
-                            st.download_button(
-                                label="💾 שמור PDF מקוצר",
-                                data=pdf_buffer.getvalue(),
-                                file_name=f"gantt_client_{gantt_data['type']}.pdf",
-                                mime="application/pdf"
-                            )
-                            st.success("✅ קובץ PDF מקוצר מוכן!")
-                        except Exception as e:
-                            st.error(f"❌ שגיאה: {e}")
-            
-            st.markdown("### 👁️ תצוגה מקדימה")
-            preview_df = pd.DataFrame(gantt_data['table'])
-            
-            preview_no_price = preview_df.copy()
-            columns_to_remove = ['מק"ט', 'מחיר מכירה']
-            for col in columns_to_remove:
-                if col in preview_no_price.columns:
-                    preview_no_price = preview_no_price.drop(columns=[col])
-            
-            tab_full, tab_client = st.tabs(["📊 גרסה מלאה", "👥 גרסת לקוח"])
-            
-            with tab_full:
-                st.dataframe(preview_df, use_container_width=True)
-            
-            with tab_client:
-                st.dataframe(preview_no_price, use_container_width=True)
-        
-        else:
-            st.info("📋 צור גנט כדי לייצא נתונים")
-
-if __name__ == "__main__":
-    main()
+                with st.spinner("מרענן נתונים
