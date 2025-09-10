@@ -93,25 +93,33 @@ class AutomatedAdvertisingSystem:
         self.excel_url = "https://github.com/print-imall/ad-agency-chat/raw/main/campaigns_data.xlsx"
         self.google_drive_folder_id = "12GYVBPrrox2LCaLHJ6BQF4nXPT-ptb2h"
         
-        # Auto-load images from Google Drive
+        # Google Drive credentials
+        self.google_credentials = {
+            "web": {
+                "client_id": "395999714-iprle913rhb1piskb9edcgrm5s2e760i.apps.googleusercontent.com",
+                "project_id": "automatic-tea-471712-n9",
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                "client_secret": "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"
+            }
+        }
+        
+        # Try to load images from Google Drive
         self.auto_load_google_drive_images()
         
     def auto_load_google_drive_images(self):
-        """Auto-load all images from Google Drive folder"""
+        """Auto-load all images from Google Drive folder using public access"""
         try:
-            # Google Drive API endpoint to list files in a folder
-            api_url = f"https://www.googleapis.com/drive/v3/files"
-            params = {
-                'q': f"'{self.google_drive_folder_id}' in parents",
-                'key': 'AIzaSyDummy',  # We'll use a different approach
-                'fields': 'files(id,name)'
-            }
+            # For now, we'll use a simpler approach that doesn't require OAuth
+            # Google Drive allows direct access to files if they're public
             
-            # Alternative approach: Use direct Google Drive links
-            # For now, let's build image URLs based on known patterns
+            st.info("Attempting to load images from Google Drive...")
             
-            # Get all item codes from the spreadsheet when it loads
-            st.info("Google Drive integration ready. Images will load when data is available.")
+            # We'll build direct download URLs for common image formats
+            # and test which ones exist
+            
+            self.scan_google_drive_for_images()
             
             return True
             
@@ -119,35 +127,70 @@ class AutomatedAdvertisingSystem:
             st.warning(f"Google Drive connection issue: {e}")
             return False
     
-    def build_google_drive_image_url(self, item_code, file_extension="jpg"):
-        """Build Google Drive direct image URL"""
-        # Google Drive direct link format: https://drive.google.com/uc?id=FILE_ID
-        # We need to map item codes to file IDs
-        
-        # For now, we'll use a placeholder approach
-        # In a full implementation, we'd need to scan the folder first
-        return None
-    
-    def scan_google_drive_folder(self):
-        """Scan Google Drive folder for all images"""
+    def scan_google_drive_for_images(self):
+        """Scan Google Drive folder for images using direct access"""
         try:
-            # This would require Google Drive API authentication
-            # For now, we'll implement a simplified version
+            # Since the folder is public, we can try to access files directly
+            # We'll use the item codes from the Excel file to build file URLs
             
-            # We can try to access the folder contents via web scraping
-            # or ask the user to provide the file list
-            
-            st.info("Scanning Google Drive folder for images...")
-            
-            # If the folder is public, we might be able to access it
-            folder_url = f"https://drive.google.com/drive/folders/{self.google_drive_folder_id}"
-            
-            # For now, return empty - we'll need API key for full implementation
-            return {}
+            if self.df is not None:
+                item_code_col = self.columns_map.get('item_code')
+                if item_code_col:
+                    unique_item_codes = self.df[item_code_col].dropna().unique()
+                    
+                    loaded_images = 0
+                    for item_code in unique_item_codes:
+                        image_url = self.build_google_drive_image_url(str(item_code))
+                        if image_url and self.test_image_url(image_url):
+                            self.image_index[str(item_code)] = image_url
+                            loaded_images += 1
+                    
+                    if loaded_images > 0:
+                        st.success(f"Loaded {loaded_images} images from Google Drive")
+                    else:
+                        st.info("No images found yet. Images will be loaded when available.")
             
         except Exception as e:
-            st.error(f"Error scanning Google Drive: {e}")
-            return {}
+            st.warning(f"Error scanning Google Drive: {e}")
+    
+    def build_google_drive_image_url(self, item_code):
+        """Build direct Google Drive image URL"""
+        # Google Drive direct link format: https://drive.google.com/uc?id=FILE_ID&export=download
+        # Since we don't have individual file IDs, we'll need a different approach
+        
+        # For public folders, we can sometimes access files directly
+        # But we need the actual file IDs, not just the folder ID
+        
+        # Alternative: Use Google Drive API to list files
+        return self.get_file_from_drive_folder(item_code)
+    
+    def get_file_from_drive_folder(self, item_code):
+        """Try to get file URL from Google Drive folder"""
+        try:
+            # Build possible filenames
+            possible_names = [
+                f"{item_code}.jpg",
+                f"{item_code}.jpeg", 
+                f"{item_code}.png",
+                f"{item_code}.JPG",
+                f"{item_code}.JPEG",
+                f"{item_code}.PNG"
+            ]
+            
+            # For now, return None since we need proper API access
+            # This is a placeholder for the actual implementation
+            return None
+            
+        except Exception as e:
+            return None
+    
+    def test_image_url(self, url):
+        """Test if image URL is accessible"""
+        try:
+            response = requests.head(url, timeout=5)
+            return response.status_code == 200
+        except:
+            return False
         
     def auto_load_data(self):
         try:
