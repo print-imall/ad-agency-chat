@@ -696,35 +696,28 @@ def main():
             
             if system.image_index:
                 st.markdown("### Available Images")
-                st.write(f"**Total images in index:** {len(system.image_index)}")
-                
-                # Show all image items in index
-                st.write("**All images in index:**")
-                for item_code, image_url in system.image_index.items():
-                    st.write(f"- {item_code}: {image_url}")
+                st.info(f"Currently {len(system.image_index)} image(s) available in system")
                 
                 sample_items = list(system.image_index.items())[:3]
                 cols = st.columns(min(3, len(sample_items)))
                 
                 for i, (item_code, image_url) in enumerate(sample_items):
                     with cols[i]:
-                        st.write(f"**Loading image for:** {item_code}")
                         try:
                             if image_url.startswith('http'):
-                                st.write(f"**Testing URL:** {image_url}")
                                 response = requests.get(image_url, timeout=5)
-                                st.write(f"**Status:** {response.status_code}")
                                 if response.status_code == 200:
                                     image = Image.open(BytesIO(response.content))
                                     st.image(image, caption=f"Code: {item_code}", use_container_width=True)
-                                    st.success(f"Successfully loaded {item_code}")
                                 else:
-                                    st.error(f"Failed to load {item_code} - Status: {response.status_code}")
+                                    st.warning(f"Cannot load image {item_code}")
                             else:
                                 image = Image.open(image_url)
                                 st.image(image, caption=f"Code: {item_code}", use_container_width=True)
-                        except Exception as e:
-                            st.error(f"Error loading image {item_code}: {str(e)}")
+                        except:
+                            st.warning(f"Error loading image {item_code}")
+            else:
+                st.info("No images available yet. Add images using the form above.")
     
     tab1, tab2, tab3 = st.tabs(["Smart Search", "Gantt Builder", "Advanced Export"])
     
