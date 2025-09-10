@@ -10,7 +10,6 @@ from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
-import tempfile
 
 def apply_custom_css():
     st.markdown("""
@@ -93,34 +92,28 @@ class AutomatedAdvertisingSystem:
         self.columns_map = {}
         self.excel_url = "https://github.com/print-imall/ad-agency-chat/raw/main/campaigns_data.xlsx"
         
-        # תמונות ידועות
+        # Known images
         self.known_images = {
             "11090111": "https://www.dropbox.com/scl/fi/lnklorrhl6gtovetf5m92/11090111.jpg?rlkey=o4wcjsdtzd4rqzep1i21lvfkk&st=whqr2eod&dl=1"
         }
         
-        # אתחול התמונות
+        # Initialize images
         self.image_index.update(self.known_images)
         
     def auto_load_data(self):
-        """טעינה אוטומטית של נתוני האקסל מ-GitHub"""
         try:
-            with st.spinner("🔄 טוען נתונים מהמערכת..."):
-                response = requests.get(self.excel_url, timeout=30)
-                response.raise_for_status()
+            response = requests.get(self.excel_url, timeout=30)
+            response.raise_for_status()
+            
+            excel_buffer = BytesIO(response.content)
+            self.df = pd.read_excel(excel_buffer, engine='openpyxl')
+            self.df = self.clean_data()
+            self.create_column_mapping()
+            
+            return True
                 
-                excel_buffer = BytesIO(response.content)
-                self.df = pd.read_excel(excel_buffer, engine='openpyxl')
-                self.df = self.clean_data()
-                self.create_column_mapping()
-                
-                st.success("✅ נתונים נטענו בהצלחה מהמערכת!")
-                return True
-                
-        except requests.exceptions.RequestException as e:
-            st.error(f"❌ שגיאה בהורדת קובץ הנתונים: {e}")
-            return False
         except Exception as e:
-            st.error(f"❌ שגיאה בטעינת הנתונים: {e}")
+            st.error(f"Error loading data: {e}")
             return False
     
     def clear_cache(self):
@@ -140,9 +133,9 @@ class AutomatedAdvertisingSystem:
             self.image_index = {}
             self.columns_map = {}
             
-            return "✅ Cache נוקה בהצלחה!"
+            return "Cache cleared successfully!"
         except Exception as e:
-            return f"❌ שגיאה בניקוי Cache: {e}"
+            return f"Cache clear error: {e}"
 
     def clean_data(self):
         df = self.df.copy()
@@ -174,7 +167,7 @@ class AutomatedAdvertisingSystem:
 
     def index_images(self, image_folder):
         if not os.path.exists(image_folder):
-            st.warning(f"תיקיית התמונות לא נמצאה: {image_folder}")
+            st.warning(f"Image folder not found: {image_folder}")
             return
         
         image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
@@ -186,11 +179,9 @@ class AutomatedAdvertisingSystem:
                 local_images[item_code] = str(file_path)
         
         self.image_index.update(local_images)
-        st.success(f"נמצאו {len(local_images)} תמונות מקומיות")
+        st.success(f"Found {len(local_images)} local images")
 
     def add_dropbox_image(self, item_code, dropbox_url):
-        """הוספת תמונה מדרופבוקס"""
-        # המרה לקישור ישיר
         if "dl=0" in dropbox_url:
             direct_url = dropbox_url.replace("dl=0", "dl=1")
         else:
@@ -201,7 +192,7 @@ class AutomatedAdvertisingSystem:
 
     def smart_search(self, query):
         if self.df is None:
-            return "❌ לא נטענו נתונים עדיין"
+            return "No data loaded"
         
         query_clean = query.strip()
         query_parts = self.split_query(query_clean)
@@ -223,7 +214,7 @@ class AutomatedAdvertisingSystem:
                     
                     if part_lower in field_value:
                         hebrew_name = self.get_hebrew_name(field_name)
-                        matching_details.append(f"'{part}' נמצא ב'{hebrew_name}")
+                        matching_details.append(f"'{part}' found in {hebrew_name}")
                         found = True
                         score += 50
                         break
@@ -240,18 +231,18 @@ class AutomatedAdvertisingSystem:
                 }
         
         if not best_match:
-            return f"❌ לא נמצאה שורה שמכילה את כל החלקים: {', '.join(query_parts)}"
+            return f"No match found for: {', '.join(query_parts)}"
         
         return self.format_result(best_match, query_clean)
 
     def build_gantt_by_budget(self, budget, target_locations=None):
         if self.df is None:
-            return "❌ לא נטענו נתונים עדיין"
+            return "No data loaded"
         
         try:
             budget = float(budget)
         except:
-            return "❌ תקציב חייב להיות מספר"
+            return "Budget must be a number"
         
         df_filtered = self.df.copy()
         if target_locations:
@@ -279,24 +270,22 @@ class AutomatedAdvertisingSystem:
                     break
         
         if not selected_items:
-            return f"❌ לא נמצאו אלמנטים שמתאימים לתקציב {budget:,.0f} ש״ח"
+            return f"No items found within budget {budget:,.0f}"
         
-        return self.format_gantt_result(selected_items, current_total, budget, "תקציב")
+        return self.format_gantt_result(selected_items, current_total, budget, "Budget")
 
     def build_gantt_by_campaign_type(self, campaign_type, budget=None, target_locations=None):
         if self.df is None:
-            return "❌ לא נטענו נתונים עדיין"
+            return "No data loaded"
         
-        if campaign_type.lower() == "דיגיטלי":
-            keywords = ['פייסבוק', 'אינסטגרם', 'גוגל', 'דיגיטל', 'פריימלס', 'וויז']
-        elif campaign_type.lower() == "פרינט":
-            keywords = ['בילבורד', 'חוצות', 'עיתון', 'מודעה', 'פוסטר', 'שלט']
-        elif campaign_type.lower() == "משולב":
-            digital_keywords = ['פייסבוק', 'אינסטגרם', 'גוגל', 'דיגיטל', 'פריימלס', 'וויז']
-            print_keywords = ['בילבורד', 'חוצות', 'עיתון', 'מודעה', 'פוסטר', 'שלט']
-            keywords = digital_keywords + print_keywords
+        if campaign_type.lower() == "digital":
+            keywords = ['facebook', 'instagram', 'google', 'digital']
+        elif campaign_type.lower() == "print":
+            keywords = ['billboard', 'outdoor', 'newspaper', 'poster']
+        elif campaign_type.lower() == "mixed":
+            keywords = ['facebook', 'instagram', 'google', 'digital', 'billboard', 'outdoor', 'newspaper', 'poster']
         else:
-            return f"❌ סוג קמפיין לא מוכר: {campaign_type}"
+            return f"Unknown campaign type: {campaign_type}"
         
         platform_col = self.columns_map['platform']
         df_filtered = self.df[
@@ -308,8 +297,8 @@ class AutomatedAdvertisingSystem:
             df_filtered = df_filtered[df_filtered[location_col].str.contains('|'.join(target_locations), case=False, na=False)]
         
         if df_filtered.empty:
-            location_text = f" במתחמים שנבחרו" if target_locations and len(target_locations) > 0 else ""
-            return f"❌ לא נמצאו אלמנטים מסוג {campaign_type}{location_text}"
+            location_text = " in selected locations" if target_locations and len(target_locations) > 0 else ""
+            return f"No items found for {campaign_type}{location_text}"
         
         price_col = self.columns_map['price']
         df_filtered['price_numeric'] = pd.to_numeric(
@@ -335,55 +324,55 @@ class AutomatedAdvertisingSystem:
                             break
                 
                 if not selected_items:
-                    location_text = f" במתחמים שנבחרו" if target_locations and len(target_locations) > 0 else ""
-                    return f"❌ לא נמצאו אלמנטים מסוג {campaign_type} שמתאימים לתקציב {budget:,.0f} ש״ח{location_text}"
+                    location_text = " in selected locations" if target_locations and len(target_locations) > 0 else ""
+                    return f"No {campaign_type} items found within budget {budget:,.0f}{location_text}"
                 
-                return self.format_gantt_result(selected_items, current_total, budget, f"{campaign_type} עם תקציב")
+                return self.format_gantt_result(selected_items, current_total, budget, f"{campaign_type} with budget")
             except:
                 pass
         
         selected_items = df_filtered.to_dict('records')
         total_cost = df_filtered['price_numeric'].sum()
         
-        location_text = f" במתחמים שנבחרו" if target_locations and len(target_locations) > 0 else ""
+        location_text = " in selected locations" if target_locations and len(target_locations) > 0 else ""
         return self.format_gantt_result(selected_items, total_cost, None, f"{campaign_type}{location_text}")
 
     def format_gantt_result(self, items, total_cost, budget, gantt_type):
         num_items = len(items)
         
-        result_text = f"📊 **גנט פרסום - {gantt_type}**\n\n"
+        result_text = f"**Gantt Report - {gantt_type}**\n\n"
         
         if budget:
-            result_text += f"💰 **תקציב:** {budget:,.0f} ש״ח\n"
-            result_text += f"💵 **עלות כוללת:** {total_cost:,.0f} ש״ח\n"
-            result_text += f"📈 **ניצול תקציב:** {(total_cost/budget)*100:.1f}%\n"
+            result_text += f"**Budget:** {budget:,.0f}\n"
+            result_text += f"**Total Cost:** {total_cost:,.0f}\n"
+            result_text += f"**Budget Usage:** {(total_cost/budget)*100:.1f}%\n"
         else:
-            result_text += f"💵 **עלות כוללת:** {total_cost:,.0f} ש״ח\n"
+            result_text += f"**Total Cost:** {total_cost:,.0f}\n"
         
-        result_text += f"📋 **מספר אלמנטים:** {num_items}\n\n"
+        result_text += f"**Number of Items:** {num_items}\n\n"
         
         table_data = []
         images_to_show = []
         
         for i, item in enumerate(items, 1):
             table_row = {
-                'מס\'': i,
-                'מק"ט': item[self.columns_map['item_code']],
-                'מתחם': item[self.columns_map['location']],
-                'פלטפורמה': item[self.columns_map['platform']],
-                'מחיר מכירה': self.format_price(item[self.columns_map['price']]),
-                'מבקרים': self.format_number(item[self.columns_map['visitors']]),
-                'גובה': self.format_dimension(item[self.columns_map['height']]),
-                'רוחב': self.format_dimension(item[self.columns_map['width']])
+                'No.': i,
+                'Item Code': item[self.columns_map['item_code']],
+                'Location': item[self.columns_map['location']],
+                'Platform': item[self.columns_map['platform']],
+                'Price': self.format_price(item[self.columns_map['price']]),
+                'Visitors': self.format_number(item[self.columns_map['visitors']]),
+                'Height': self.format_dimension(item[self.columns_map['height']]),
+                'Width': self.format_dimension(item[self.columns_map['width']])
             }
             
             height2 = self.format_dimension(item[self.columns_map['height2']])
             width2 = self.format_dimension(item[self.columns_map['width2']])
             
             if height2 not in ["0", "0.0"]:
-                table_row['גובה2'] = height2
+                table_row['Height2'] = height2
             if width2 not in ["0", "0.0"]:
-                table_row['רוחב2'] = width2
+                table_row['Width2'] = width2
             
             table_data.append(table_row)
             
@@ -398,13 +387,13 @@ class AutomatedAdvertisingSystem:
         buffer = BytesIO()
         
         if not table_data:
-            df_empty = pd.DataFrame({"הודעה": ["אין נתונים להצגה"]})
+            df_empty = pd.DataFrame({"Message": ["No data to display"]})
             df_empty.to_excel(buffer, index=False, engine='openpyxl')
         else:
             df = pd.DataFrame(table_data)
             
             if not include_price:
-                columns_to_remove = ['מק"ט', 'מחיר מכירה']
+                columns_to_remove = ['Item Code', 'Price']
                 for col in columns_to_remove:
                     if col in df.columns:
                         df = df.drop(columns=[col])
@@ -440,31 +429,13 @@ class AutomatedAdvertisingSystem:
             df = pd.DataFrame(table_data)
             
             if not include_price:
-                columns_to_remove = ['מק"ט', 'מחיר מכירה']
+                columns_to_remove = ['Item Code', 'Price']
                 for col in columns_to_remove:
                     if col in df.columns:
                         df = df.drop(columns=[col])
             
-            column_translation = {
-                'מס\'': 'No.',
-                'מק"ט': 'Item Code',
-                'מתחם': 'Location',
-                'פלטפורמה': 'Platform', 
-                'מחיר מכירה': 'Price',
-                'מבקרים': 'Visitors',
-                'גובה': 'Height',
-                'רוחב': 'Width',
-                'גובה2': 'Height2',
-                'רוחב2': 'Width2'
-            }
-            
-            df_english = df.copy()
-            for hebrew_col, english_col in column_translation.items():
-                if hebrew_col in df_english.columns:
-                    df_english = df_english.rename(columns={hebrew_col: english_col})
-            
-            table_values = [list(df_english.columns)]
-            for _, row in df_english.iterrows():
+            table_values = [list(df.columns)]
+            for _, row in df.iterrows():
                 table_values.append([str(cell) for cell in row])
             
             table = Table(table_values, repeatRows=1)
@@ -503,7 +474,7 @@ class AutomatedAdvertisingSystem:
         for code in item_codes:
             query = query.replace(code, '').strip()
         
-        platform_patterns = ['פריימלס', 'פייסבוק', 'אינסטגרם', 'גוגל']
+        platform_patterns = ['facebook', 'instagram', 'google']
         platforms_found = []
         
         for platform in platform_patterns:
@@ -519,43 +490,43 @@ class AutomatedAdvertisingSystem:
 
     def get_hebrew_name(self, field_name):
         names = {
-            'location': 'מתחם',
-            'item_code': 'מק"ט',
-            'platform': 'פלטפורמה',
-            'price': 'מחיר',
-            'visitors': 'מבקרים',
-            'height': 'גובה',
-            'width': 'רוחב',
-            'campaign': 'קמפיין'
+            'location': 'Location',
+            'item_code': 'Item Code',
+            'platform': 'Platform',
+            'price': 'Price',
+            'visitors': 'Visitors',
+            'height': 'Height',
+            'width': 'Width',
+            'campaign': 'Campaign'
         }
         return names.get(field_name, field_name)
 
     def format_result(self, match, query):
         row = match['row']
         
-        result_text = f"🔍 **תוצאה עבור '{query}':**\n\n"
-        result_text += "✅ **איך נמצאה ההתאמה:**\n"
+        result_text = f"**Search Result for '{query}':**\n\n"
+        result_text += "**How match was found:**\n"
         for detail in match['matching_details']:
             result_text += f"• {detail}\n"
         result_text += "\n"
         
         table_data = {
-            'מק"ט': row[self.columns_map['item_code']],
-            'מתחם': row[self.columns_map['location']],
-            'פלטפורמה': row[self.columns_map['platform']],
-            'מחיר מכירה': self.format_price(row[self.columns_map['price']]),
-            'מבקרים': self.format_number(row[self.columns_map['visitors']]),
-            'גובה': self.format_dimension(row[self.columns_map['height']]),
-            'רוחב': self.format_dimension(row[self.columns_map['width']])
+            'Item Code': row[self.columns_map['item_code']],
+            'Location': row[self.columns_map['location']],
+            'Platform': row[self.columns_map['platform']],
+            'Price': self.format_price(row[self.columns_map['price']]),
+            'Visitors': self.format_number(row[self.columns_map['visitors']]),
+            'Height': self.format_dimension(row[self.columns_map['height']]),
+            'Width': self.format_dimension(row[self.columns_map['width']])
         }
         
         height2 = self.format_dimension(row[self.columns_map['height2']])
         width2 = self.format_dimension(row[self.columns_map['width2']])
         
         if height2 not in ["0", "0.0"]:
-            table_data['גובה2'] = height2
+            table_data['Height2'] = height2
         if width2 not in ["0", "0.0"]:
-            table_data['רוחב2'] = width2
+            table_data['Width2'] = width2
         
         item_code = str(row[self.columns_map['item_code']])
         image_path = None
@@ -569,7 +540,7 @@ class AutomatedAdvertisingSystem:
             clean_price = re.sub(r'[^\d.]', '', str(price_str))
             if clean_price:
                 price_num = float(clean_price)
-                return f"{price_num:,.0f} ש\"ח"
+                return f"{price_num:,.0f}"
             return str(price_str)
         except:
             return str(price_str)
@@ -603,19 +574,19 @@ class AutomatedAdvertisingSystem:
                     st.image(image, use_container_width=True, caption=caption)
                     return True
                 else:
-                    st.warning(f"לא ניתן לטעון תמונה מ: {image_path_or_url}")
+                    st.warning(f"Cannot load image from: {image_path_or_url}")
                     return False
             else:
                 image = Image.open(image_path_or_url)
                 st.image(image, use_container_width=True, caption=caption)
                 return True
         except Exception as e:
-            st.warning(f"לא ניתן להציג תמונה: {e}")
+            st.warning(f"Cannot display image: {e}")
             return False
 
 def main():
     st.set_page_config(
-        page_title="מערכת פרסום מתקדמת - אוטומטית", 
+        page_title="Automated Advertising System", 
         page_icon="🚀", 
         layout="wide",
         initial_sidebar_state="expanded"
@@ -625,12 +596,12 @@ def main():
     
     st.markdown("""
     <div style="text-align: center; margin-bottom: 2rem;">
-        <h1 class="floating">🚀 מערכת פרסום אוטומטית</h1>
+        <h1 class="floating">Automated Advertising System</h1>
         <p style="font-size: 1.2rem; color: #667eea; font-weight: 500;">
-            מערכת חכמה לחיפוש, בניית גנט ונידול קמפיינים פרסומיים
+            Smart system for search, gantt building and campaign management
         </p>
         <div class="success-banner">
-            ✨ חדש! הנתונים נטענים אוטומטית מהמערכת - אין צורך להעלות קבצים!
+            Data loads automatically from GitHub - no need to upload files!
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -641,19 +612,351 @@ def main():
     system = st.session_state.auto_system
     
     if system.df is None:
-        with st.spinner("🔄 מאתחל מערכת ונטען נתונים..."):
+        with st.spinner("Loading system and data..."):
             if system.auto_load_data():
                 st.balloons()
-                st.markdown("""
-                <div class="success-banner">
-                    ✅ המערכת הותחלה בהצלחה! הנתונים נטענו מה-GitHub
-                </div>
-                """, unsafe_allow_html=True)
+                st.success("System initialized successfully!")
     
     with st.sidebar:
-        st.markdown("### 🔄 בקרת מערכת")
+        st.markdown("### System Control")
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("🔄 רענן נתונים", use_container_width=True):
-                with st.spinner("מרענן נתונים
+            if st.button("Refresh Data", use_container_width=True):
+                with st.spinner("Refreshing data..."):
+                    if system.auto_load_data():
+                        st.success("Data updated!")
+                        st.rerun()
+        
+        with col2:
+            if st.button("Clear Cache", use_container_width=True):
+                result = system.clear_cache()
+                st.success(result)
+                st.rerun()
+        
+        st.markdown("---")
+        
+        st.markdown("### Add Image Links")
+        
+        with st.expander("Instructions for adding Dropbox images"):
+            st.markdown("""
+            **How to add images from Dropbox:**
+            1. Go to your images folder in Dropbox
+            2. Click on an image and select Share
+            3. Copy the link
+            4. Add the item code and link in the system below
+            
+            **Important:** Make sure images are named exactly like the item code
+            """)
+        
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            new_item_code = st.text_input("Item Code:")
+        with col2:
+            new_image_url = st.text_input("Dropbox Link:")
+        
+        if st.button("Add Image", use_container_width=True) and new_item_code and new_image_url:
+            if system.add_dropbox_image(new_item_code, new_image_url):
+                st.success(f"Image added for item code {new_item_code}")
+        
+        st.markdown("### Local Images")
+        image_folder = st.text_input("Path to local images folder")
+        
+        if image_folder and st.button("Load Local Images", use_container_width=True):
+            system.index_images(image_folder)
+        
+        if system.df is not None:
+            st.markdown("---")
+            st.markdown("### Statistics")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown(f"""
+                <div class="metric-container">
+                    <h3 style="color: #667eea; margin: 0;">Items</h3>
+                    <h2 style="margin: 0.5rem 0;">{len(system.df):,}</h2>
+                    <p style="margin: 0; color: #666;">Total</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown(f"""
+                <div class="metric-container">
+                    <h3 style="color: #764ba2; margin: 0;">Images</h3>
+                    <h2 style="margin: 0.5rem 0;">{len(system.image_index):,}</h2>
+                    <p style="margin: 0; color: #666;">Available</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            st.markdown("---")
+            st.markdown("### System Info")
+            st.info(f"Data updated: {pd.Timestamp.now().strftime('%d/%m/%Y %H:%M')}")
+            st.info("Source: GitHub Repository")
+            st.info("Images: Dropbox")
+            
+            if system.image_index:
+                st.markdown("### Available Images")
+                sample_items = list(system.image_index.items())[:3]
+                cols = st.columns(min(3, len(sample_items)))
+                
+                for i, (item_code, image_url) in enumerate(sample_items):
+                    with cols[i]:
+                        try:
+                            if image_url.startswith('http'):
+                                response = requests.get(image_url, timeout=5)
+                                if response.status_code == 200:
+                                    image = Image.open(BytesIO(response.content))
+                                    st.image(image, caption=f"Code: {item_code}", use_container_width=True)
+                                else:
+                                    st.warning(f"Cannot load image {item_code}")
+                            else:
+                                image = Image.open(image_url)
+                                st.image(image, caption=f"Code: {item_code}", use_container_width=True)
+                        except:
+                            st.warning(f"Error loading image {item_code}")
+    
+    tab1, tab2, tab3 = st.tabs(["Smart Search", "Gantt Builder", "Advanced Export"])
+    
+    with tab1:
+        if system.df is None:
+            st.error("Error loading data. Try refreshing the page.")
+        else:
+            if 'history' not in st.session_state:
+                st.session_state.history = []
+            
+            for message in st.session_state.history:
+                if message['role'] == 'user':
+                    with st.chat_message("user"):
+                        st.write(message['content'])
+                else:
+                    with st.chat_message("assistant"):
+                        st.markdown(message['content'])
+                        
+                        if 'table' in message:
+                            st.dataframe(pd.DataFrame(message['table']), use_container_width=True)
+                        
+                        if 'image' in message:
+                            system.display_image(message['image'])
+            
+            user_input = st.chat_input("Ask a question or search for something...")
+            
+            if user_input:
+                st.session_state.history.append({'role': 'user', 'content': user_input})
+                
+                with st.spinner("Searching..."):
+                    result = system.smart_search(user_input)
+                    
+                    if isinstance(result, tuple):
+                        text, table, image = result
+                        msg = {'role': 'assistant', 'content': text, 'table': table}
+                        if image:
+                            msg['image'] = image
+                        st.session_state.history.append(msg)
+                    else:
+                        st.session_state.history.append({'role': 'assistant', 'content': result})
+                
+                st.rerun()
+    
+    with tab2:
+        if system.df is None:
+            st.warning("Error loading data")
+        else:
+            gantt_type = st.selectbox("Choose gantt type:", ["Budget Gantt", "Campaign Type Gantt"])
+            
+            if gantt_type == "Budget Gantt":
+                col1, col2 = st.columns([2, 3])
+                
+                with col1:
+                    budget = st.number_input("Budget", min_value=0, value=50000, step=1000)
+                
+                with col2:
+                    if 'location' in system.columns_map:
+                        location_col = system.columns_map['location']
+                        all_locations = system.df[location_col].unique()
+                        selected_locations = st.multiselect("Select locations (optional)", all_locations)
+                
+                if st.button("Build Budget Gantt", use_container_width=True):
+                    with st.spinner("Building gantt..."):
+                        result = system.build_gantt_by_budget(budget, selected_locations if selected_locations else None)
+                        
+                        if isinstance(result, tuple):
+                            text, table, images = result
+                            st.success("Gantt built successfully!")
+                            st.markdown(text)
+                            
+                            df_display = pd.DataFrame(table)
+                            st.dataframe(df_display, use_container_width=True)
+                            
+                            st.session_state['last_gantt'] = {
+                                'title': f'Advertising Gantt - Budget {budget:,.0f}',
+                                'table': table,
+                                'type': 'budget'
+                            }
+                            
+                            if images:
+                                st.markdown("### Element Images")
+                                cols = st.columns(min(3, len(images)))
+                                for i, (item_code, image_path) in enumerate(images):
+                                    with cols[i % 3]:
+                                        system.display_image(image_path, f"Code: {item_code}")
+                        else:
+                            st.error(result)
+            
+            elif gantt_type == "Campaign Type Gantt":
+                col1, col2 = st.columns([1, 1])
+                
+                with col1:
+                    campaign_type = st.selectbox("Choose campaign type:", ["Digital", "Print", "Mixed"])
+                    
+                    use_budget = st.checkbox("Limit by budget")
+                    
+                    if use_budget:
+                        budget_limit = st.number_input("Maximum budget", min_value=0, value=30000, step=1000)
+                    else:
+                        budget_limit = None
+                
+                with col2:
+                    if 'location' in system.columns_map:
+                        location_col = system.columns_map['location']
+                        all_locations = system.df[location_col].unique()
+                        selected_locations_type = st.multiselect("Select locations (optional)", all_locations, key="locations_by_type")
+                    else:
+                        selected_locations_type = None
+                
+                if st.button("Build Campaign Gantt", use_container_width=True):
+                    with st.spinner("Building gantt..."):
+                        result = system.build_gantt_by_campaign_type(
+                            campaign_type,
+                            budget_limit if use_budget else None,
+                            selected_locations_type if selected_locations_type else None
+                        )
+                        
+                        if isinstance(result, tuple):
+                            text, table, images = result
+                            st.success("Gantt built successfully!")
+                            st.markdown(text)
+                            
+                            df_display = pd.DataFrame(table)
+                            st.dataframe(df_display, use_container_width=True)
+                            
+                            budget_text = f" - Budget {budget_limit:,.0f}" if use_budget and budget_limit else ""
+                            locations_text = f" - {len(selected_locations_type)} locations" if selected_locations_type else ""
+                            st.session_state['last_gantt'] = {
+                                'title': f'Advertising Gantt - {campaign_type}{budget_text}{locations_text}',
+                                'table': table,
+                                'type': f'campaign_type_{campaign_type}'
+                            }
+                            
+                            if images:
+                                st.markdown("### Element Images")
+                                cols = st.columns(min(3, len(images)))
+                                for i, (item_code, image_path) in enumerate(images):
+                                    with cols[i % 3]:
+                                        system.display_image(image_path, f"Code: {item_code}")
+                        else:
+                            st.error(result)
+    
+    with tab3:
+        if 'last_gantt' in st.session_state:
+            gantt_data = st.session_state['last_gantt']
+            
+            st.info(f"Data available for export: {gantt_data['title']}")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader("Full Version")
+                
+                if st.button("Download Full Excel", key="excel_full"):
+                    with st.spinner("Creating Excel file..."):
+                        try:
+                            export_buffer = system.create_excel_export(
+                                gantt_data['table'], gantt_data['title'], include_price=True
+                            )
+                            
+                            st.download_button(
+                                label="Save Full Excel",
+                                data=export_buffer.getvalue(),
+                                file_name=f"gantt_full_{gantt_data['type']}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            )
+                            st.success("Full Excel file ready!")
+                        except Exception as e:
+                            st.error(f"Error: {e}")
+                
+                if st.button("Download Full PDF", key="pdf_full"):
+                    with st.spinner("Creating PDF..."):
+                        try:
+                            pdf_buffer = system.create_pdf_export(
+                                gantt_data['table'], gantt_data['title'], include_price=True
+                            )
+                            
+                            st.download_button(
+                                label="Save Full PDF",
+                                data=pdf_buffer.getvalue(),
+                                file_name=f"gantt_full_{gantt_data['type']}.pdf",
+                                mime="application/pdf"
+                            )
+                            st.success("Full PDF file ready!")
+                        except Exception as e:
+                            st.error(f"Error: {e}")
+            
+            with col2:
+                st.subheader("Client Version")
+                
+                if st.button("Download Client Excel", key="excel_short"):
+                    with st.spinner("Creating Excel file..."):
+                        try:
+                            export_buffer = system.create_excel_export(
+                                gantt_data['table'], gantt_data['title'], include_price=False
+                            )
+                            
+                            st.download_button(
+                                label="Save Client Excel",
+                                data=export_buffer.getvalue(),
+                                file_name=f"gantt_client_{gantt_data['type']}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            )
+                            st.success("Client Excel file ready!")
+                        except Exception as e:
+                            st.error(f"Error: {e}")
+                
+                if st.button("Download Client PDF", key="pdf_short"):
+                    with st.spinner("Creating PDF..."):
+                        try:
+                            pdf_buffer = system.create_pdf_export(
+                                gantt_data['table'], gantt_data['title'], include_price=False
+                            )
+                            
+                            st.download_button(
+                                label="Save Client PDF",
+                                data=pdf_buffer.getvalue(),
+                                file_name=f"gantt_client_{gantt_data['type']}.pdf",
+                                mime="application/pdf"
+                            )
+                            st.success("Client PDF file ready!")
+                        except Exception as e:
+                            st.error(f"Error: {e}")
+            
+            st.markdown("### Preview")
+            preview_df = pd.DataFrame(gantt_data['table'])
+            
+            preview_no_price = preview_df.copy()
+            columns_to_remove = ['Item Code', 'Price']
+            for col in columns_to_remove:
+                if col in preview_no_price.columns:
+                    preview_no_price = preview_no_price.drop(columns=[col])
+            
+            tab_full, tab_client = st.tabs(["Full Version", "Client Version"])
+            
+            with tab_full:
+                st.dataframe(preview_df, use_container_width=True)
+            
+            with tab_client:
+                st.dataframe(preview_no_price, use_container_width=True)
+        
+        else:
+            st.info("Create a gantt to export data")
+
+if __name__ == "__main__":
+    main()
