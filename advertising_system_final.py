@@ -798,22 +798,31 @@ def main():
         
         st.markdown("---")
         
-        st.markdown("### 🖼️ תמונות מקומיות")
+        st.markdown("### 🖼️ תמונות אוטומטיות")
+        st.info("💡 התמונות נטענות אוטומטית מדרופבוקס")
+        
+        if st.button("☁️ טען תמונות מדרופבוקס", use_container_width=True):
+            with st.spinner("טוען תמונות מדרופבוקס..."):
+                num_images = system.auto_load_images_from_dropbox()
+                if num_images > 0:
+                    st.success(f"נטענו {num_images} תמונות מדרופבוקס!")
+                else:
+                    st.warning("לא נמצאו תמונות או בעיה בחיבור")
+        
+        st.markdown("### 📁 תמונות מקומיות נוספות")
         st.info("💡 ניתן להוסיף תמונות מקומיות בנוסף לאוטומטיות")
         
-        image_folder = st.text_input("נתיב לתיקיית תמונות")
+        image_folder = st.text_input("נתיב לתיקיית תמונות מקומית")
         
-        if image_folder and st.button("📁 טען תמונות", use_container_width=True):
+        if image_folder and st.button("📁 טען תמונות מקומיות", use_container_width=True):
             system.index_images(image_folder)
         
         st.markdown("---")
         
-        st.markdown("### 🔗 הגדרות דרופבוקס")
-        dropbox_url = st.text_input("קישור לתיקיית דרופבוקס")
-        
-        if dropbox_url and st.button("☁️ חבר דרופבוקס", use_container_width=True):
-            if system.setup_dropbox_images(dropbox_url):
-                st.success("דרופבוקס מחובר!")
+        st.markdown("### 🔗 מידע דרופבוקס")
+        if system.dropbox_folder_url:
+            st.success("✅ מחובר לדרופבוקס")
+            st.info("🔗 תמונות יטענו אוטומטית בעת הצורך")
         
         if system.df is not None:
             st.markdown("---")
