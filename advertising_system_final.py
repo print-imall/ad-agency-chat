@@ -613,15 +613,24 @@ def main():
         
         st.markdown("### 🔗 הוספת תמונות")
         
+        # כפתור טעינה אוטומטית מדרופבוקס
+        if st.button("🚀 טען כל התמונות מדרופבוקס אוטומטית", use_container_width=True):
+            with st.spinner("טוען תמונות מדרופבוקס..."):
+                num_loaded = system.auto_load_dropbox_images()
+                if num_loaded > 0:
+                    st.balloons()
+                    st.rerun()
+        
+        st.markdown("---")
+        
         with st.expander("💡 הוראות הוספת תמונות מדרופבוקס"):
             st.markdown("""
-            **איך להוסיף תמונות מדרופבוקס:**
-            1. היכנס לתיקיית התמונות בדרופבוקס
-            2. לחץ על תמונה ובחר "שתף"
-            3. העתק את הקישור
-            4. הוסף את המקט והקישור במערכת למטה
+            **טעינה אוטומטית:**
+            1. לחץ על הכפתור למעלה כדי לטעון אוטומטית את כל התמונות מהאפליקציה בדרופבוקס
+            2. המערכת תסרוק את כל הקבצים ותבנה אינדקס אוטומטי
             
-            **חשוב:** וודא שהתמונות נקראות בדיוק כמו המקט (למשל: 11090111.jpg)
+            **הוספה ידנית:**
+            השתמש בטופס למטה להוספה ידנית של תמונות נוספות
             """)
         
         col1, col2 = st.columns([1, 2])
