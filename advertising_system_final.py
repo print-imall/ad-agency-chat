@@ -751,6 +751,10 @@ def main():
             if system.add_dropbox_image(new_item_code, new_image_url):
                 st.success(f"Image added for item code {new_item_code}")
         
+        # Add button to try auto-scanning Dropbox
+        if st.button("Try Auto-Scan Dropbox", use_container_width=True):
+            system.auto_load_dropbox_images()
+        
         st.markdown("### Local Images")
         image_folder = st.text_input("Path to local images folder")
         
