@@ -165,6 +165,28 @@ class SimplifiedAdvertisingSystem:
         self.image_index[str(item_code).strip()] = direct_url
         return True
 
+    def auto_load_dropbox_images(self, code_column="item_code", url_column="dropbox_url"):
+        """
+        טוען אוטומטית את כל התמונות מדרופבוקס לפי DataFrame פנימי (self.df).
+        code_column - שם העמודה עם מזהה הפריט
+        url_column - שם העמודה עם הקישור לדרופבוקס
+        """
+        if self.df is None:
+            return 0
+        
+        if code_column not in self.df.columns or url_column not in self.df.columns:
+            return 0
+        
+        count = 0
+        for _, row in self.df.iterrows():
+            item_code = row[code_column]
+            dropbox_url = str(row[url_column]).strip()
+            if dropbox_url and dropbox_url.lower().startswith("http"):
+                self.add_dropbox_image(item_code, dropbox_url)
+                count += 1
+        return count
+
+
     def smart_search(self, query):
         if self.df is None:
             return "לא נטענו נתונים עדיין"
