@@ -643,26 +643,43 @@ def main():
             if system.add_dropbox_image(new_item_code, new_image_url):
                 st.success(f"✅ תמונה נוספה למקט {new_item_code}")
         
-        st.markdown("### 📋 הוספה קבוצתית")
-        with st.expander("הוספת מספר מקטים בבת אחת"):
-            st.markdown("""
-            **להוספה קבוצתית:**
-            1. העתק רשימת מקטים (אחד בכל שורה)
-            2. הדבק כאן למטה
-            3. לחץ הוסף - תוכל להוסיף קישורים אחר כך
-            """)
+        st.markdown("### 📋 הוספה קבוצתית של תמונות")
+        
+        st.markdown("""
+        **להוספה מהירה של תמונות מדרופבוקס:**
+        1. לך לתיקיית התמונות בדרופבוקס
+        2. בחר כמה תמונות (5-10)
+        3. ליד כל תמונה - לחץ "שתף" והעתק קישור
+        4. הדבק את הפרטים בפורמט למטה
+        """)
+        
+        bulk_images = st.text_area(
+            "הדבק תמונות בפורמט: מקט,קישור (אחד בכל שורה)",
+            height=150,
+            placeholder="11090111,https://dropbox.com/link1\n11090201,https://dropbox.com/link2"
+        )
+        
+        if st.button("הוסף תמונות מהרשימה", use_container_width=True) and bulk_images:
+            lines = [line.strip() for line in bulk_images.split('\n') if line.strip()]
+            added_count = 0
             
-            bulk_codes = st.text_area("הדבק מקטים (אחד בכל שורה):", height=100)
-            if st.button("הוסף מקטים", use_container_width=True) and bulk_codes:
-                codes = [code.strip() for code in bulk_codes.split('\n') if code.strip()]
-                added_count = 0
-                for code in codes:
-                    # הוסף placeholder למקט
-                    system.image_index[code] = "placeholder"
-                    added_count += 1
-                
-                if added_count > 0:
-                    st.success(f"נוספו {added_count} מקטים. הוסף קישורי תמונות בעת הצורך.")
+            for line in lines:
+                if ',' in line:
+                    parts = line.split(',', 1)
+                    if len(parts) == 2:
+                        item_code = parts[0].strip()
+                        url = parts[1].strip()
+                        
+                        if system.add_dropbox_image(item_code, url):
+                            added_count += 1
+            
+            if added_count > 0:
+                st.success(f"נוספו {added_count} תמונות בהצלחה!")
+                st.rerun()
+            else:
+                st.warning("לא נוספו תמונות. בדוק את הפורמט.")
+        
+        st.markdown("---")
         
         if system.df is not None:
             st.markdown("---")
